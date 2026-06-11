@@ -12,4 +12,6 @@ class Pipeline_State(TypedDict, total=False):
     session_id: str
     masked_filename: str
     
+    chunk: list[dict[str,str]]
+    
     error: Optional[str]

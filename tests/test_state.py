@@ -1,4 +1,4 @@
-from masker.state import Pipeline_State
+from pipeline.state import Pipeline_State
 
 def test_fields():
     state: Pipeline_State = {

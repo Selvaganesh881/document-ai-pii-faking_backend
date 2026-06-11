@@ -3,8 +3,8 @@ from __future__ import annotations
 import aiosqlite
 
 CREATE_SESSIONS = """
-CREATE TABLEIF NOT EXISTS pii_masking_sessions(
-    session_id  TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS pii_masking_sessions(
+    session_id TEXT PRIMARY KEY,
     original_filename TEXT NOT NULL,
     masked_filename TEXT NOT NULL,
     file_hash TEXT NOT NULL UNIQUE,
@@ -13,7 +13,7 @@ CREATE TABLEIF NOT EXISTS pii_masking_sessions(
 );
 """
 CREATE_MAPPINGS = """
-CREATE TABLEIF NOT EXISTS pii_masking_mappings(
+CREATE TABLE IF NOT EXISTS pii_masking_mappings(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL REFERENCES pii_masking_sessions(session_id) ON DELETE CASCADE,
     entity_type TEXT NOT NULL,
