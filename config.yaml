@@ -1,3 +1,4 @@
 model_name: "roberta-base"
 model_path: "./store_api/roberta-pii"
 model_threshold: 0.5
+pdf_ocr_fallback_threshold: 50

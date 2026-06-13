@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     model_name: str = Field(default="roberta-base")
     model_path: Path = Field(default=Path("store_api/roberta-pii"))
     model_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    pdf_ocr_fallback_threshold: int = Field(default=50)
     
     model_config = SettingsConfigDict(
         env_file=".env",

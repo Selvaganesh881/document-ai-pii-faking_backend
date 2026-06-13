@@ -9,3 +9,10 @@ pydantic-settings
 
 # db
 aiosqlite
+
+# For PDF Ingestion
+
+docling
+pytesseract
+pymupdf4llm
+pymupdf
