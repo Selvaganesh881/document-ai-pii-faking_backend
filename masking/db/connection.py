@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 
 import aiosqlite
 
+from masking.db.schema import initialize_schema
 from settings import get_settings
 
 
@@ -22,5 +23,7 @@ async def get_db() -> AsyncGenerator[aiosqlite.connection, None]:
         await db.execute("PRAGMA journal_mode=WAL")
 
         await db.execute("PRAGMA foreign_keys=ON")
+
+        await initialize_schema(db)
 
         yield db

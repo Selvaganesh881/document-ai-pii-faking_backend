@@ -1,6 +1,7 @@
-model_name: "xlm-roberta-large-finetuned-conll03-english"
-model_path: "FacebookAI/xlm-roberta-large-finetuned-conll03-english"
+model_name: "roberta-base"
+model_path: "./RoBERTa_PII_AI4Privacy"
+model_path_01: "./RoBERTa_PII_Conll2003"
 model_threshold: 0.4
-pdf_ocr_fallback_threshold: 500
+pdf_ocr_fallback_threshold: 50
 max_chunk_size: 400
 output_format: "markdown"

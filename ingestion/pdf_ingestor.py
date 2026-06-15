@@ -4,14 +4,20 @@ import asyncio
 import logging
 from pathlib import Path
 
-import pymupdf4llm
+import pdfplumber
+
+try:
+    import pymupdf4llm
+except ImportError:  # pragma: no cover
+    pymupdf4llm = None
+
 from docling.chunking import HierarchicalChunker
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from settings import get_settings
 
 from ingestion.base import BaseIngestor, TextChunk
-from settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,39 +49,158 @@ class PDFIngestor(BaseIngestor):
             logger.info("OCR Engine is successfully initialized.")
 
     def read_digital_pdf(self, file_path: str) -> list[TextChunk]:
-        """Fast textual vector extraction using PyMuPDF4LLM."""
-        try:
-            pages = pymupdf4llm.to_markdown(file_path, page_chunks=True)
-            chunks: list[TextChunk] = []
+        """Fast textual extraction using PyMuPDF4LLM when available, else pdfplumber."""
+        # 1. Cast to string to prevent pathlib.Path object compatibility crashes
+        file_path_str = str(file_path)
 
-            for page in pages:
-                text = page.get("text", "")
-                if not text or not text.strip():
-                    continue
+        if pymupdf4llm is not None:
+            try:
+                # In older versions, this returns a string. In newer versions, a list of dicts.
+                result = pymupdf4llm.to_markdown(file_path_str, page_chunks=True)
+                chunks: list[TextChunk] = []
 
-                # Default to fallback length counter if page metadata is corrupt
-                page_meta = page.get("metadata", {})
-                page_no = page_meta.get("page", len(chunks))
+                # 2. Defend against older API versions returning a raw string
+                if isinstance(result, str):
+                    if result.strip():
+                        chunks.append(
+                            TextChunk(
+                                chunk_id=1,
+                                text=result.strip(),
+                                metadata={
+                                    "page": 1,
+                                    "reading_medium": "PyMuPDF4LLM (Legacy)",
+                                    "original_document_format": "PDF",
+                                },
+                            )
+                        )
+                    return chunks
 
-                chunks.append(
-                    TextChunk(
-                        chunk_id=page_no,
-                        text=text.strip(),
-                        metadata={
-                            "page": page_no,
-                            "reading_medium": "PyMuPDF4LLM",
-                            "original_document_format": "PDF",
-                        },
+                # 3. Handle the modern API list of dictionaries
+                for page in result:
+                    text = page.get("text", "")
+                    if not text or not text.strip():
+                        continue
+
+                    # 4. FIX: PyMuPDF4LLM stores the page number under 'page_number', not 'page'
+                    page_meta = page.get("metadata", {})
+                    page_no = page_meta.get("page_number", len(chunks) + 1)
+
+                    chunks.append(
+                        TextChunk(
+                            chunk_id=page_no,
+                            text=text.strip(),
+                            metadata={
+                                "page": page_no,
+                                "reading_medium": "PyMuPDF4LLM",
+                                "original_document_format": "PDF",
+                            },
+                        )
                     )
+                return chunks
+
+            except Exception as e:
+                # 5. FIX: Added exc_info=True so the terminal actually prints the stack trace!
+                logger.error(
+                    "Failed digital extraction for %s using PyMuPDF4LLM: %s",
+                    file_path_str,
+                    str(e),
+                    exc_info=True,
                 )
+                # falls through to pdfplumber extraction
+
+        # --- PDFPlumber Fallback ---
+        try:
+            chunks: list[TextChunk] = []
+            with pdfplumber.open(file_path_str) as pdf:
+                for page_no, page in enumerate(pdf.pages, start=1):
+                    page_text = page.extract_text() or ""
+                    if not page_text.strip():
+                        continue
+
+                    chunks.append(
+                        TextChunk(
+                            chunk_id=page_no,
+                            text=page_text.strip(),
+                            metadata={
+                                "page": page_no,
+                                "reading_medium": "pdfplumber",
+                                "original_document_format": "PDF",
+                            },
+                        )
+                    )
             return chunks
         except Exception as e:
             logger.error(
                 "Failed digital extraction for %s due to unexpected exception: %s",
-                file_path,
+                file_path_str,
                 str(e),
+                exc_info=True,
             )
             return []
+
+    # def read_digital_pdf(self, file_path: str) -> list[TextChunk]:
+    #     """Fast textual extraction using PyMuPDF4LLM when available, else pdfplumber."""
+    #     if pymupdf4llm is not None:
+    #         try:
+    #             pages = pymupdf4llm.to_markdown(file_path, page_chunks=True)
+    #             chunks: list[TextChunk] = []
+
+    #             for page in pages:
+    #                 text = page.get("text", "")
+    #                 if not text or not text.strip():
+    #                     continue
+
+    #                 # Default to fallback length counter if page metadata is corrupt
+    #                 page_meta = page.get("metadata", {})
+    #                 page_no = page_meta.get("page", len(chunks))
+
+    #                 chunks.append(
+    #                     TextChunk(
+    #                         chunk_id=page_no,
+    #                         text=text.strip(),
+    #                         metadata={
+    #                             "page": page_no,
+    #                             "reading_medium": "PyMuPDF4LLM",
+    #                             "original_document_format": "PDF",
+    #                         },
+    #                     )
+    #                 )
+    #             return chunks
+    #         except Exception as e:
+    #             logger.error(
+    #                 "Failed digital extraction for %s using PyMuPDF4LLM: %s",
+    #                 file_path,
+    #                 str(e),
+    #             )
+    #             # fall through to pdfplumber extraction
+
+    #     try:
+    #         chunks: list[TextChunk] = []
+    #         with pdfplumber.open(file_path) as pdf:
+    #             for page_no, page in enumerate(pdf.pages, start=1):
+    #                 page_text = page.extract_text() or ""
+    #                 if not page_text.strip():
+    #                     continue
+
+    #                 chunks.append(
+    #                     TextChunk(
+    #                         chunk_id=page_no,
+    #                         text=page_text.strip(),
+    #                         metadata={
+    #                             "page": page_no,
+    #                             "reading_medium": "pdfplumber",
+    #                             "original_document_format": "PDF",
+    #                         },
+    #                     )
+    #                 )
+    #         return chunks
+    #     except Exception as e:
+    #         logger.error(
+    #             "Failed digital extraction for %s due to unexpected exception: %s",
+    #             file_path,
+    #             str(e),
+    #         )
+    #         return []
 
     def read_scanned_pdf(self, file_path: str) -> list[TextChunk]:
         """Structure-aware chunking and layouts extraction via Docling fallback."""

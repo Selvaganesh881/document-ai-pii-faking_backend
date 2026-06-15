@@ -21,8 +21,11 @@ aiosqlite
 # ==========================================
 docling
 pymupdf4llm
+pymupdf4llm
 pymupdf
 pytesseract
+pdfplumber
+ocrmypdf
 
 # ==========================================
 # PII Recognition & Anonymization

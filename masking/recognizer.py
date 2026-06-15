@@ -6,14 +6,13 @@ import logging
 from presidio_analyzer import AnalyzerEngine, RecognizerResult
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from pydantic import BaseModel, ConfigDict
+from settings import get_settings
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
     Pipeline,
     pipeline,
 )
-
-from settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class PIIRecognizer:
 
         settings = get_settings()
 
-        logger.info("Loading NER Model From %s", settings.model_path)
+        logger.info("Loading NER_01 Model From %s", settings.model_path)
 
         self._ner: Pipeline = pipeline(
             task="token-classification",
@@ -53,6 +52,20 @@ class PIIRecognizer:
                 str(settings.model_path)
             ),
             tokenizer=AutoTokenizer.from_pretrained(str(settings.model_path)),
+            # model=AutoModelForTokenClassification.from_pretrained("FacebookAI/xlm-roberta-large-finetuned-conll03-english"),
+            # tokenizer=AutoTokenizer.from_pretrained("FacebookAI/xlm-roberta-large-finetuned-conll03-english"),
+            aggregation_strategy="simple",
+            device=-1,
+        )
+
+        logger.info("Loading NER_02 Model From %s", settings.model_path_01)
+
+        self._ner_01: Pipeline = pipeline(
+            task="token-classification",
+            model=AutoModelForTokenClassification.from_pretrained(
+                str(settings.model_path_01)
+            ),
+            tokenizer=AutoTokenizer.from_pretrained(str(settings.model_path_01)),
             # model=AutoModelForTokenClassification.from_pretrained("FacebookAI/xlm-roberta-large-finetuned-conll03-english"),
             # tokenizer=AutoTokenizer.from_pretrained("FacebookAI/xlm-roberta-large-finetuned-conll03-english"),
             aggregation_strategy="simple",
@@ -126,30 +139,34 @@ class PIIRecognizer:
 
         return merged
 
-    def _run_ner(self, text: str) -> list[PIIEntity]:
+    def _run_ner_pipeline(self, text: str, nlp_pipeline: Pipeline) -> list[PIIEntity]:
+        """Generic processor that runs a given Hugging Face pipeline over text chunks."""
         chunks = self._split_text_into_chunks(text=text, max_chunk_size=self._max_chunk)
         entities: list[PIIEntity] = []
 
         ner_map: dict[str, str] = {
+            # Standard CoNLL fallbacks
             "PER": "PERSON",
             "ORG": "ORGANIZATION",
             "LOC": "LOCATION",
         }
 
         for chunk_text, chunk_overlap in chunks:
-            ner_result: list[dict] = self._ner(chunk_text)
+            ner_result: list[dict] = nlp_pipeline(chunk_text)
 
             for entity in ner_result:
                 score = float(entity["score"])
                 if score < self._threshold:
                     continue
+
+                raw_tag = str(entity["entity_group"]).upper()
+
+                clean_tag = raw_tag.rstrip("0123456789")
+
                 entities.append(
                     PIIEntity(
                         text=str(entity["word"]).strip(),
-                        entity_type=ner_map.get(
-                            str(entity["entity_group"]).upper(),
-                            str(entity["entity_group"]).upper(),
-                        ),
+                        entity_type=ner_map.get(clean_tag, clean_tag),
                         start=entity["start"] + chunk_overlap,
                         end=entity["end"] + chunk_overlap,
                     )
@@ -166,12 +183,13 @@ class PIIRecognizer:
             entities=[
                 "EMAIL_ADDRESS",
                 "PHONE_NUMBER",
-                "DATE_TIME",
+                # "DATE_TIME",
                 "IP_ADDRESS",
                 "URL",
                 "US_SSN",
                 "IBAN_CODE",
                 "CREDIT_CARD",
+                "US_BANK_NUMBER",
             ],
             language="en",
         )
@@ -191,10 +209,13 @@ class PIIRecognizer:
 
     def _analyze_sync(self, text: str) -> list[PIIEntity]:
 
-        ner_entities = self._run_ner(text=text)
+        ner_entities = self._run_ner_pipeline(text=text, nlp_pipeline=self._ner)
+        ner_01_entities = self._run_ner_pipeline(text=text, nlp_pipeline=self._ner_01)
         persidio_entities = self._run_presidio(text=text)
 
-        merged_entities = self._merge_entries(ner_entities + persidio_entities)
+        merged_entities = self._merge_entries(
+            ner_entities + ner_01_entities + persidio_entities
+        )
 
         logger.info("No PII Entities Recognized is %d", len(merged_entities))
 

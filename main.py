@@ -48,14 +48,19 @@ async def process_document(
 
         final_state = await graph_app.ainvoke(initial_state)
 
-        # 4. Send the final data back to React
-        return {
+        response = {
             "status": "success",
             "original_text": final_state.get("original_text", ""),
             "masked_text": final_state.get("masked_text", ""),
             "extracted_json": final_state.get("extracted_json", {}),
             "unmasked_json": final_state.get("unmasked_json", {}),
         }
+
+        if "error" in final_state:
+            response["status"] = "error"
+            response["message"] = final_state["error"]
+
+        return response
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -90,5 +95,64 @@ async def get_dashboard_stats():
                 },
                 "recent_runs": recent_runs,
             }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def _fetch_results() -> dict[str, object]:
+    async with get_db() as db:
+        session_rows = await repository.get_all_session(db)
+
+        results = []
+        for row in session_rows:
+            session_id = row.get("session_id", "")
+            mappings = await repository.get_mappings_by_session_id(db, session_id)
+
+            extracted_json = {
+                "mappings": [
+                    {
+                        "entity_type": mapping.get("entity_type", ""),
+                        "masked_value": mapping.get("masked_value", ""),
+                        "original_value": mapping.get("original_value", ""),
+                    }
+                    for mapping in mappings
+                ]
+            }
+            unmasked_json = {
+                "mappings": [
+                    {
+                        "entity_type": mapping.get("entity_type", ""),
+                        "value": mapping.get("original_value", ""),
+                    }
+                    for mapping in mappings
+                ]
+            }
+
+            results.append(
+                {
+                    "id": session_id,
+                    "original_filename": row.get("original_filename", ""),
+                    "created_at": row.get("created_at", ""),
+                    "status": "complete",
+                    "extracted_json": extracted_json,
+                    "unmasked_json": unmasked_json,
+                }
+            )
+
+    return {"status": "success", "results": results}
+
+
+@app.get("/api/results")
+async def get_results():
+    try:
+        return await _fetch_results()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/result")
+async def get_result():
+    try:
+        return await _fetch_results()
     except Exception as e:
         return {"status": "error", "message": str(e)}

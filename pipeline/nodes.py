@@ -13,8 +13,9 @@ from masking.db import repository
 from masking.db.connection import get_db
 from masking.faker_engine import PIIFakerEngine
 from masking.recognizer import PIIRecognizer
-from pipeline.state import Pipeline_State
 from utils import calculate_file_hash
+
+from pipeline.state import Pipeline_State
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,18 @@ async def hash_and_check_cache_node(state: Pipeline_State) -> Pipeline_State:
     if existing_session:
         logger.info("Cache hit! Document already processed.")
         return {
+            **state,
             "file_hash": file_hash,
             "cache_hit": True,
             "session_id": existing_session["session_id"],
         }
 
-    return {"file_hash": file_hash, "cache_hit": False, "session_id": str(uuid.uuid4())}
+    return {
+        **state,
+        "file_hash": file_hash,
+        "cache_hit": False,
+        "session_id": str(uuid.uuid4()),
+    }
 
 
 async def ingest_document_node(state: Pipeline_State) -> Pipeline_State:
@@ -52,7 +59,7 @@ async def ingest_document_node(state: Pipeline_State) -> Pipeline_State:
     # Capture the full original string
     full_original = "\n\n".join([c.text for c in chunks])
 
-    return {"chunk": chunk_dicts, "original_text": full_original}
+    return {**state, "chunk": chunk_dicts, "original_text": full_original}
 
 
 async def mask_pii_node(state: Pipeline_State) -> Pipeline_State:
@@ -65,15 +72,24 @@ async def mask_pii_node(state: Pipeline_State) -> Pipeline_State:
 
     masked_chunks = []
 
+    # entity_type_tracker: dict[str, str] = {}
+
     for c in state["chunk"]:
         entities = await recognizer.analyze(c["text"])
+        #     for entity in entities:
+        #         if entity.text.strip() not in entity_type_tracker:
+        #             entity_type_tracker[entity.text.strip()] = entity.entity_type
         masked_text = faker.mask_text(c["text"], entities)
         masked_chunks.append({"chunk_id": c["chunk_id"], "text": masked_text})
 
     # Save session and mappings to SQLite
     db_mappings = [
-        {"entity_type": "UNKNOWN", "original_value": orig, "masked_value": fake}
-        for orig, fake in faker.global_mapping.items()
+        {
+            "entity_type": faker.entity_types.get(orig, "UNKNOWN"),
+            "original_value": orig,
+            "masked_value": fake,
+        }
+        for (orig, fake) in faker.global_mapping.items()
     ]
 
     async with get_db() as db:
@@ -89,7 +105,7 @@ async def mask_pii_node(state: Pipeline_State) -> Pipeline_State:
 
     full_masked = "\n\n".join([c["text"] for c in masked_chunks])
 
-    return {"chunk": masked_chunks, "masked_text": full_masked}
+    return {**state, "chunk": masked_chunks, "masked_text": full_masked}
 
 
 async def extract_llm_node(state: Pipeline_State) -> Pipeline_State:
@@ -111,9 +127,9 @@ async def extract_llm_node(state: Pipeline_State) -> Pipeline_State:
     )
 
     if "error" in extraction_result:
-        return {"error": extraction_result["error"]}
+        return {**state, "error": extraction_result["error"]}
 
-    return {"extracted_json": extraction_result}
+    return {**state, "extracted_json": extraction_result}
 
 
 # Add this function to the bottom of pipeline/nodes.py
@@ -131,7 +147,7 @@ async def unmask_pii_node(state: Pipeline_State) -> Pipeline_State:
         mappings = await repository.get_mappings_by_session_id(db, session_id)
 
     if not mappings:
-        return {"unmasked_json": state["extracted_json"]}
+        return {**state, "unmasked_json": state["extracted_json"]}
 
     # 2. Build reverse dictionary: { "Fake_Name": "Real_Name" }
     # CRITICAL: Sort by length descending. This prevents partial word replacements

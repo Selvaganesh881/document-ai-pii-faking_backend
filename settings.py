@@ -16,10 +16,13 @@ class Settings(BaseSettings):
     LOG_DIR: Path = Field(default=Path("logs"))
     LLM_ENDPOINT: str = Field(default="http://localhost:8000/v1")
     LLM_API_KEY: str
+    LLM_TIMEOUT: float = Field(default=120.0)
+    LLM_MODEL: str = Field(default="Qwen/Qwen3-4B")
 
     # from config.yaml
     model_name: str = Field(default="roberta-base")
-    model_path: str = Field(default=str("store_api/roberta-pii"))
+    model_path: str
+    model_path_01: str
     model_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     pdf_ocr_fallback_threshold: int = Field(default=50)
     max_chunk_size: int = Field(default=400)

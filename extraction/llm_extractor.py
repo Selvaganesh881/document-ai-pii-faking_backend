@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from openai import APIConnectionError
 
 # Import settings
 from settings import get_settings
@@ -19,14 +20,16 @@ class LLMExtractor:
 
         # Priority: 1. Passed argument (for local testing), 2. .env variable
         self.base_url = endpoint_url or settings.LLM_ENDPOINT
-        self.model_id = "Qwen3-4B"
+        self.model_id = settings.LLM_MODEL
 
         self.llm = ChatOpenAI(
-            base_url=self.base_url,
+            # base_url=self.base_url,
             api_key=settings.LLM_API_KEY,  # Pulled dynamically
             model=self.model_id,
             temperature=0.0,
-            max_tokens=2048,
+            timeout=settings.LLM_TIMEOUT,
+            # max_tokens=2048,
+            max_retries=3,
             model_kwargs={"top_p": 0.1},
         )
 
@@ -75,7 +78,12 @@ class LLMExtractor:
 
             logger.info("Structured parsing successfully handled by Qwen3-4B.")
             return result
-
+        except APIConnectionError as api_err:
+            logger.error(
+                "API connection error during LLM extraction: %s. Check endpoint URL and network connectivity.",
+                str(api_err),
+            )
+            return {"error": f"API connection failure: {str(api_err)}"}
         except Exception as e:
             logger.error(
                 "Unhandled execution error in LangChain extraction wrapper: %s", str(e)
