@@ -1,11 +1,3 @@
-import hashlib
-from pathlib import Path
-
-
-def calculate_file_hash(file_path: Path | str) -> str:
-    """Generates a SHA-256 hash of a file for unique session tracking."""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
+version https://git-lfs.github.com/spec/v1
+oid sha256:4acd0a45ef20fb2baa89c0cc25bf47af56d97bec4d3f357f2be34f6a005a3998
+size 307

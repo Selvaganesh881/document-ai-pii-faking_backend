@@ -1,28 +1,3 @@
-from __future__ import annotations
-
-from typing import Any, Optional, TypedDict
-
-
-class Pipeline_State(TypedDict, total=False):
-    input_file: str
-    output_dir: str
-
-    file_hash: str
-    cache_hit: bool
-
-    session_id: str
-    masked_filename: str
-
-    original_text: str
-    masked_text: str
-    unmasked_json: dict[str, Any]
-
-    # We will store the extracted chunks here
-    chunk: list[dict[str, str]]
-
-    # --- LLM Specific State Additions ---
-    user_instruction: str
-    json_schema: dict[str, Any]
-    extracted_json: dict[str, Any]
-
-    error: Optional[str]
+version https://git-lfs.github.com/spec/v1
+oid sha256:d574b6f828e6bb60eac0d312791e4ae6959a461d504e52d327a381235678e1ce
+size 491
